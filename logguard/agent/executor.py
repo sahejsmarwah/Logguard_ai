@@ -25,6 +25,25 @@ def execute(step: str, state):
         if not target_path:
              state["reasoning_trace"].append(f"Executed step: {step} | Skipped (No target path provided)")
         else:
+            # Check if target is a directory (Project Root)
+            import os
+            from logguard.utils.file_finder import find_faulty_file
+            
+            if os.path.isdir(target_path):
+                logs = state.get("findings", {}).get("logs", []) or state.get("provided_logs", [])
+                found_file = find_faulty_file(target_path, logs)
+                
+                if found_file:
+                    target_path = found_file
+                    # Update state with the specific file so subsequent steps use it
+                    if isinstance(state, dict):
+                        state["target_file_path"] = found_file
+                    else:
+                        state.target_file_path = found_file
+                    state["reasoning_trace"].append(f"Executed step: {step} | Auto-discovered file: {found_file}")
+                else:
+                    state["reasoning_trace"].append(f"Executed step: {step} | Failed to find specific file in {target_path}")
+
             ctx = get_code_context(target_path)
             if isinstance(state, dict):
                  if "code_context" not in state: state["code_context"] = {}
