@@ -17,7 +17,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "logguard=logguard.guard:run_guard",
+            "logguard=logguard.cli:main",
         ],
     },
     python_requires=">=3.8",

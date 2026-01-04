@@ -25,28 +25,36 @@ def handle_incident(service: str, severity: str, target_file_path:str = None, lo
 
     result = build_graph().invoke(state)
 
+    # Ensure result is an IncidentState object if it's returned as a dict
+    if isinstance(result, dict):
+        result = IncidentState(**result)
+
     log_results(result)
     human_intervention(result)
 
     return result
 
 def log_results(state):
+    if isinstance(state, dict):
+        state = IncidentState(**state)
     logger.info("🔍 Investigation completed")
 
     logger.info(f"📌 Root cause identified:")
-    logger.info(f"    {state.get('root_cause', 'Unknown')}")
+    root_cause = getattr(state, "root_cause", None)
+    logger.info(f"    {root_cause if root_cause else 'Unknown'}")
 
     logger.info("🛠 Suggested fix:")
-    suggested_fix = state.get("suggested_fix")
+    suggested_fix = getattr(state, "suggested_fix", None)
     if suggested_fix:
         for line in suggested_fix.split("\n"):
             logger.info(f"    {line}")
     else:
         logger.info("    No suggested fix available.")
 
-    logger.info(f"📊 Confidence score: {state.get('confidence', 0.0):.2f}")
+    confidence = getattr(state, "confidence", 0.0)
+    logger.info(f"📊 Confidence score: {confidence:.2f}")
     
-    findings = state.get("findings", {})
+    findings = getattr(state, "findings", {})
     if "reproduction_result" in findings:
         repro = findings["reproduction_result"]
         logger.info(f"🧪 Reproduction Test: {'FAILED (As Expected)' if not repro['success'] else 'PASSED (Unexpectedly)'}")
@@ -56,6 +64,8 @@ def log_results(state):
         logger.info(f"✅ Verification Test: {'PASSED' if verify['success'] else 'FAILED'}")
 
 def human_intervention(state):
+    if isinstance(state, dict):
+        state = IncidentState(**state)
     logger.warning("🧑‍✈️ Human approval required before remediation")
 
     while True:
@@ -76,10 +86,10 @@ def human_intervention(state):
 
             # 2. Apply the fix physically to the code
             # Use fixed_code_content as it contains actual code, not description
-            final_fix_content = state.get("fixed_code_content") if isinstance(state, dict) else state.fixed_code_content
+            final_fix_content = getattr(state, "fixed_code_content", None)
             
             if final_fix_content:
-                target_path = state.get("target_file_path") if isinstance(state, dict) else state.target_file_path
+                target_path = getattr(state, "target_file_path", None)
                 
                 if target_path:
                     try:

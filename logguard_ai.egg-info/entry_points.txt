@@ -1,2 +1,0 @@
-[console_scripts]
-logguard = logguard.guard:run_guard

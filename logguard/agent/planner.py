@@ -35,7 +35,7 @@ def create_plan(service: str, severity: str):
                     Choose only the necessary investigation steps.
                     """
 
-    response = call_llm(SYSTEM_PROMPT, user_prompt, "llama-3.1-8b-instant")
+    response = call_llm(SYSTEM_PROMPT, user_prompt, "llama-3.3-70b-versatile")
 
     try:
         plan = json.loads(extract_json(response))
