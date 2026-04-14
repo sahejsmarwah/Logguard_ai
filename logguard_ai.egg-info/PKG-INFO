@@ -1,3 +1,21 @@
+Metadata-Version: 2.4
+Name: logguard-ai
+Version: 0.2.0
+Summary: Autonomous Incident Response Agent for Python applications
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: groq
+Requires-Dist: langgraph
+Requires-Dist: pydantic
+Requires-Dist: python-dotenv
+Requires-Dist: pyyaml
+Requires-Dist: plyer
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
 # 🛡️ LogGuard AI
 
 **The Autonomous Incident Response Agent for Python.**

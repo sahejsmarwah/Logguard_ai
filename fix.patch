@@ -1,0 +1,5 @@
+--- a/foo.py
++++ b/foo.py
+@@ -1 +1 @@
+-print("broken")
++print("fixed")

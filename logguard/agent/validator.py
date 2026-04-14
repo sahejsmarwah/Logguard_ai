@@ -75,7 +75,7 @@ Relevant Code:
     if state.confidence < 0.6:
         state.recommended_action = "rollback_or_escalate"
         state.requires_human_approval = True
-    elif state.confidence < 0.8:
+    elif state.confidence < 0.85:
         state.recommended_action = "human_review_required"
         state.requires_human_approval = True
     else:

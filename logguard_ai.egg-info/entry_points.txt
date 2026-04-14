@@ -1,0 +1,2 @@
+[console_scripts]
+logguard = logguard.cli:main

@@ -1,85 +1,73 @@
 # LogGuard AI: Technical Deep Dive & Architecture
 
 ## 1. Overview
-LogGuard AI is an **Autonomous Incident Response Agent**. It doesn't just "detect" errors; it investigates them like a human Site Reliability Engineer (SRE). It reads logs, analyzes stack traces, browses your code, plans a fix, validates it with a test, and then applies the patch—all automatically.
+LogGuard AI is an **Autonomous Incident Response Agent**. It doesn't just "detect" errors; it investigates them like a human Site Reliability Engineer (SRE). It reads logs, analyzes stack traces, extracts specific code context, plans a fix, validates it with a self-generated test, and applies the patch.
 
-## 2. Core Philosophy
-The system is built on an **Agentic Loop** using **LangGraph**. Unlike a standard script that runs A -> B -> C, LogGuard operates in a cycle:
-1.  **Plan**: "What do I need to know to fix this?"
-2.  **Execute**: "I'll read the file `payment.py` and checking the logs."
-3.  **Reason**: "The logs say `ValueError`, and the code shows no try/except block."
-4.  **Validate**: "I'll write a reproduction script to prove it fails."
-5.  **Act**: "I'll patch the code and verify the test passes."
+## 2. Core Philosophy: The Agentic Loop
+The system uses **LangGraph** to model incident response as a state machine. The agent operates in a cycle:
 
-## 3. The Three Operation Modes
+1.  **Planner**: Decisions are made based on incident severity and available logs. It plans investigation steps (e.g., `fetch_logs`, `identify_code`).
+2.  **Executor**: Executes the plan. It uses a **Smart Context Reader** that extracts ±80 lines around the specific crash line found in the stack trace.
+3.  **Validator**: Uses **Groq (Llama 3 70B)** to analyze the code vs. logs. It identifies the root cause and generates the full fixed file content + a reproduction Python script.
+4.  **Verification**: The system uses the "Scientific Method":
+    - Runs the repro script (must **fail** to confirm the bug).
+    - Applies the fix temporarily.
+    - Runs the repro script again (must **pass** to confirm the fix).
+    - Restores the original file to wait for approval/auto-fix logic.
 
-### A. Runtime Guard (`logguard <script>`)
+## 3. Operation Modes
+
+### A. Runtime Guard (`logguard run <script>`)
 **"Zero-Touch" Protection.**
-- You run your script *through* LogGuard: `logguard my_script.py`.
-- LogGuard wraps your process.
-- If it crashes, LogGuard catches the `stderr`, automatically spins up the agent, fixes the code, and (optionally) restarts the process.
-- **Best for:** Development scripts, simple workers, cron jobs.
+- Wraps your process and captures `stderr`.
+- If a crash occurs, it automatically triggers the agent.
+- After a successful fix, it offers to **auto-restart** the process.
 
 ### B. Log Watcher (`logguard watch`)
 **"Sidecar" Monitoring.**
-- Your app runs normally (Docker, Systemd, etc.).
-- LogGuard tails your log file: `logguard watch --logs app.log --project .`.
-- When it sees a crash trace, it triggers the agent.
-- **Best for:** Production services, huge servers, complex deploys.
+- Tails log files in real-time.
+- Uses **Content-Hash Deduplication**: If the same error occurs 100 times, LogGuard only analyzes it once.
 
-### C. Static Analysis (`logguard analyze`)
-**"Post-Mortem" Forensics.**
-- You have a crash log from last night.
-- You point LogGuard to it: `logguard analyze --logs crash.log --project .`.
-- It performs the investigation offline.
+### C. Post-Mortem Analysis (`logguard analyze`)
+**Forensic Investigation.**
+- Analyzes static log files offline or auto-discovers logs in a project root.
 
 ## 4. System Architecture
 
 ```mermaid
 graph TD
-    UserApp[User Application] -->|Crashes| LogSource[Logs / Stderr]
-    LogSource -->|Trigger| IncidentManager[Incident Manager]
+    App[Target Application] -->|Traceback| Monitor[Guard / Watcher]
+    Monitor -->|Trigger| Manager[Incident Manager]
     
-    subgraph "LogGuard Agent (LangGraph)"
-        IncidentManager --> Planner
-        Planner -->|Next Step| Executor
-        Executor -->|Call Tool| Tools_Layer
-        Tools_Layer -->|Result| Executor
+    subgraph "LangGraph Agent"
+        Manager --> Planner
+        Planner --> Executor
         Executor -->|Loop| Planner
         Planner -->|Done| Validator
+        Validator --> Verification
     end
     
-    subgraph "Tools Layer"
-        FileFinder[File Finder (Recursive Scan)]
-        CodeReader[Code Context Reader]
-        TestRunner[Test Runner (Reproduction)]
-        Patcher[Patcher (Apply Fix)]
+    subgraph "Verification Layer"
+        Verification -->|1. Prove Bug| Repro[Run Repro Script]
+        Verification -->|2. Verify Fix| Patch[Apply Fix & Test]
     end
     
-    Validator -->|Success| HumanApproval[Human Approval]
-    HumanApproval -->|Approve| Patcher
-    Patcher -->|Write| UserApp
+    Verification -->|Final State| Approval[Auto-Fix / Human Approval]
+    Approval -->|Patch| App
 ```
 
-## 5. Key Components
+## 5. Persistence & Safety
 
-### The Brain (`logguard/agent`)
-- **Planner**: Decides the strategy. Uses detailed prompts to understand SRE methodologies.
-- **Executor**: The "hands" of the agent. It calls tools based on the plan.
-- **Validator**: The "QA". It writes a Python script (`repro_test.py`) to reproduce the bug and verifies the fix.
+### Persistent Storage (`~/.logguard/`)
+- `incidents.log`: A JSON-lines audit trail of every incident detected.
+- `reports/`: Human-readable text reports for every investigation.
+- `config.yaml`: Global settings for thresholds and behavior.
 
-### The Tools (`logguard/tools`)
-- **File Finder**: The "Eyes". If you give it a project root, it scans the directory tree using fuzzy matching and stack trace analysis to find *exactly* which file caused the crash.
-- **Simulator**: Capable of applying patches and rolling them back if they fail verification.
+### Safety Mechanisms
+- **Backups**: Every file modification creates a `.bak` copy.
+- **Smart Context**: Only reads relevant slices of code to stay within token limits.
+- **Confidence Thresholds**: High-confidence fixes (>= 85%) can be set to auto-apply, while low-confidence ones always require review.
 
-### Connectivity (`logguard/llm.py`)
-- Uses **Groq** (Llama 3 70B) for high-speed inference. It's set up to be plug-and-play with a simple API key.
-
-## 6. Project Structure
-- `logguard/`: Core package.
-    - `agent/`: AI Logic.
-    - `graph/`: LangGraph orchestration.
-    - `tools/`: Interfaces for file I/O, testing, etc.
-    - `watcher.py`: Logic for tailing logs.
-    - `guard.py`: Logic for wrapping subprocesses.
-- `setup.py`: Makes the whole thing installable as a CLI (`logguard`).
+## 6. Connectivity
+- **Groq API**: High-speed Llama 3 70B inference for real-time analysis.
+- **Plyer**: Native OS notifications for background alert visibility.
